@@ -13,6 +13,12 @@
 #include <functional>
 #include <math.h>
 
+#include <GL/glew.h>
+#include <GLFW/glfw3.h>
+#include <iostream>
+#include <vector>
+#include <math.h>
+
 // Window dimensions
 const GLint WIDTH = 800, HEIGHT = 600;
 
@@ -33,7 +39,14 @@ struct Ball {
 // Block types
 enum BlockType {
     INDESTRUCTIBLE,
-    BONUS,
+    BONUS_SIZE_UP,
+    BONUS_SIZE_DOWN,
+    BONUS_SPEED_UP,
+    BONUS_SPEED_DOWN,
+    BONUS_STICKY,
+    BONUS_EXTRA_LIFE,
+    BONUS_EXTRA_BALL,
+    BONUS_ONE_TIME_BOTTOM,
     SPEED_UP,
     DESTRUCTIBLE
 };
@@ -50,7 +63,10 @@ struct Block {
 // Game state
 int score = 0;
 int lives = 3;
+bool stickyBall = false;
+bool oneTimeBottom = false;
 std::vector<Block> blocks;
+std::vector<Ball> balls;
 
 // Initialize the game objects
 void initGame() {
@@ -60,11 +76,9 @@ void initGame() {
     paddle.height = 20.0f;
     paddle.speed = 500.0f;
 
-    ball.x = WIDTH / 2.0f;
-    ball.y = HEIGHT / 2.0f;
-    ball.radius = 10.0f;
-    ball.velocityX = 200.0f;
-    ball.velocityY = -200.0f;
+    balls.clear();
+    Ball initialBall = { WIDTH / 2.0f, HEIGHT / 2.0f, 10.0f, 200.0f, -200.0f };
+    balls.push_back(initialBall);
 
     blocks.clear();
     // Initialize blocks with different types and properties
@@ -81,7 +95,7 @@ void initGame() {
                 block.health = -1;
             }
             else if (i == 1) {
-                block.type = BONUS;
+                block.type = BONUS_SIZE_UP;
                 block.health = 1;
             }
             else if (i == 2) {
@@ -127,52 +141,92 @@ bool checkCollision(Ball& ball, Block& block) {
         ball.y + ball.radius > block.y && ball.y - ball.radius < block.y + block.height;
 }
 
+
+// Apply bonus effect
+void applyBonus(BlockType type) {
+    switch (type) {
+    case BONUS_SIZE_UP:
+        paddle.width *= 1.2f;  // Меньше увеличение размера
+        break;
+    case BONUS_SIZE_DOWN:
+        paddle.width *= 0.8f;
+        break;
+    case BONUS_SPEED_UP:
+        ball.velocityX *= 1.2f;
+        ball.velocityY *= 1.2f;
+        break;
+    case BONUS_SPEED_DOWN:
+        ball.velocityX *= 0.8f;
+        ball.velocityY *= 0.8f;
+        break;
+    case BONUS_STICKY:
+        stickyBall = true;
+        break;
+    case BONUS_EXTRA_LIFE:
+        lives++;
+        break;
+    case BONUS_EXTRA_BALL: {
+        Ball newBall = ball;
+        newBall.velocityX = -newBall.velocityX;
+        balls.push_back(newBall);
+        break;
+    }
+    case BONUS_ONE_TIME_BOTTOM:
+        oneTimeBottom = true;
+        break;
+    default:
+        break;
+    }
+}
+
 // Update game state
 void updateGame(float deltaTime) {
-    ball.x += ball.velocityX * deltaTime;
-    ball.y += ball.velocityY * deltaTime;
+    for (auto& ball : balls) {
+        ball.x += ball.velocityX * deltaTime;
+        ball.y += ball.velocityY * deltaTime;
 
-    if (ball.x <= 0.0f || ball.x + ball.radius >= WIDTH)
-        ball.velocityX = -ball.velocityX;
-    if (ball.y <= 0.0f)
-        ball.velocityY = -ball.velocityY;
-
-    if (checkCollision(ball, paddle)) {
-        ball.velocityY = -ball.velocityY;
-        ball.y = paddle.y - ball.radius;
-    }
-
-    for (auto& block : blocks) {
-        if (checkCollision(ball, block)) {
+        if (ball.x <= 0.0f || ball.x + ball.radius >= WIDTH)
+            ball.velocityX = -ball.velocityX;
+        if (ball.y <= 0.0f)
             ball.velocityY = -ball.velocityY;
-            if (block.type == SPEED_UP) {
-                ball.velocityX *= 1.1f;
-                ball.velocityY *= 1.1f;
-            }
-            else if (block.type == BONUS) {
-                // Handle bonus drop (not implemented here)
-            }
-            if (block.type != INDESTRUCTIBLE) {
-                block.health--;
-                if (block.health <= 0) {
-                    block.destroyed = true;
-                    score += 1;
+
+        if (checkCollision(ball, paddle)) {
+            ball.velocityY = -ball.velocityY;
+            ball.y = paddle.y - ball.radius;
+        }
+
+        for (auto& block : blocks) {
+            if (checkCollision(ball, block)) {
+                ball.velocityY = -ball.velocityY;
+                if (block.type != INDESTRUCTIBLE) {
+                    block.health--;
+                    if (block.health <= 0) {
+                        block.destroyed = true;
+                        score += 1;
+                        applyBonus(block.type);
+                    }
                 }
             }
         }
-    }
 
-    if (ball.y >= HEIGHT) {
-        lives--;
-        if (lives <= 0) {
-            std::cout << "Game Over! Your score: " << score << std::endl;
-            initGame();
-        }
-        else {
-            ball.x = WIDTH / 2.0f;
-            ball.y = HEIGHT / 2.0f;
-            ball.velocityX = 200.0f;
-            ball.velocityY = -200.0f;
+        if (ball.y >= HEIGHT) {
+            if (oneTimeBottom) {
+                oneTimeBottom = false;
+                ball.velocityY = -ball.velocityY;
+            }
+            else {
+                lives--;
+                if (lives <= 0) {
+                    std::cout << "Game Over! Your score: " << score << std::endl;
+                    initGame();
+                }
+                else {
+                    ball.x = WIDTH / 2.0f;
+                    ball.y = HEIGHT / 2.0f;
+                    ball.velocityX = 200.0f;
+                    ball.velocityY = -200.0f;
+                }
+            }
         }
     }
 }
@@ -189,20 +243,25 @@ void renderGame() {
     glVertex2f(paddle.x, paddle.y + paddle.height);
     glEnd();
 
-    // Render ball
-    glBegin(GL_TRIANGLE_FAN);
-    for (int i = 0; i < 360; i++) {
-        float theta = i * 3.14159f / 180;
-        glVertex2f(ball.x + ball.radius * cos(theta), ball.y + ball.radius * sin(theta));
+    // Render balls
+    for (const auto& ball : balls) {
+        glBegin(GL_TRIANGLE_FAN);
+        for (int i = 0; i < 360; i++) {
+            float theta = i * 3.14159f / 180;
+            glVertex2f(ball.x + ball.radius * cos(theta), ball.y + ball.radius * sin(theta));
+        }
+        glEnd();
     }
-    glEnd();
 
     // Render blocks
     for (const auto& block : blocks) {
         if (!block.destroyed) {
             if (block.type == INDESTRUCTIBLE) glColor3f(0.8f, 0.8f, 0.8f); // Grey
-            else if (block.type == BONUS) glColor3f(0.0f, 1.0f, 0.0f); // Green
-            else if (block.type == SPEED_UP) glColor3f(1.0f, 0.0f, 0.0f); // Red
+            else if (block.type == BONUS_SIZE_UP || block.type == BONUS_EXTRA_LIFE) glColor3f(0.0f, 1.0f, 0.0f); // Green
+            else if (block.type == BONUS_SIZE_DOWN || block.type == BONUS_SPEED_DOWN) glColor3f(1.0f, 0.5f, 0.0f); // Orange
+            else if (block.type == BONUS_SPEED_UP) glColor3f(1.0f, 0.0f, 0.0f); // Red
+            else if (block.type == BONUS_STICKY) glColor3f(0.0f, 0.0f, 1.0f); // Blue
+            else if (block.type == BONUS_EXTRA_BALL || block.type == BONUS_ONE_TIME_BOTTOM) glColor3f(1.0f, 1.0f, 0.0f); // Yellow
             else glColor3f(1.0f, 1.0f, 0.0f); // Yellow
 
             glBegin(GL_QUADS);
@@ -211,8 +270,21 @@ void renderGame() {
             glVertex2f(block.x + block.width, block.y + block.height);
             glVertex2f(block.x, block.y + block.height);
             glEnd();
+
+            // Draw cracks proportional to health
+            if (block.health > 0) {
+                glColor3f(0.0f, 0.0f, 0.0f); // Black for cracks
+                glBegin(GL_LINES);
+                for (int i = 0; i < block.health; i++) {
+                    glVertex2f(block.x + (i * (block.width / (block.health + 1))), block.y);
+                    glVertex2f(block.x + (i * (block.width / (block.health + 1))), block.y + block.height);
+                }
+                glEnd();
+            }
         }
     }
+
+    // Render score and lives will be leter
 
     glColor3f(1.0f, 1.0f, 1.0f); // Reset color to white for next frame
 }
