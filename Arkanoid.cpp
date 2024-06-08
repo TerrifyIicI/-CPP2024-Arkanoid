@@ -272,9 +272,9 @@ void destroy(Block& block) {
     // Уничтожение разрушаемого блока
     if (block.type != INDESTRUCTIBLE) {
         block.health--;
+        score += 1;
         if (block.health <= 0) {
             block.destroyed = true;
-            score += 1;
         }
         if (block.type == SPEED_UP) {
             for (auto& ball : balls) {
@@ -284,14 +284,16 @@ void destroy(Block& block) {
             return;
         }
         // Создание бонуса
-        Bonus bonus;
-        bonus.x = block.x + block.width / 2 - 10.0f;
-        bonus.y = block.y + block.height / 2 - 10.0f;
-        bonus.width = 20.0f;
-        bonus.height = 20.0f;
-        bonus.active = true;
-        bonus.type = static_cast<BonusType>(std::rand() % 8);
-        bonuses.push_back(bonus);
+        if (std::rand() % 100 < 37) {
+            Bonus bonus;
+            bonus.x = block.x + block.width / 2 - 10.0f;
+            bonus.y = block.y + block.height / 2 - 10.0f;
+            bonus.width = 20.0f;
+            bonus.height = 20.0f;
+            bonus.active = true;
+            bonus.type = static_cast<BonusType>(std::rand() % 8);
+            bonuses.push_back(bonus);
+        }
     }
 }
 
@@ -562,6 +564,38 @@ void renderLives() {
         drawHeart(WIDTH - 25.0f * i - 15.0f, 10.0f, 20.0f);
     }
 }
+
+void Line(float x, float y, float x1, float y1, float x2, float y2, float size) {
+    glVertex2f(x + x1 * size, y - y1 * size);
+    glVertex2f(x + x2 * size, y - y2 * size);
+}
+
+void ShowCount(float x, float y, int a, float size) {
+    glLineWidth(3);
+    glBegin(GL_LINES);
+    if ((a != 1) && (a != 4)) Line(x, y, 0.3, 0.85, 0.7, 0.85, size);
+    if ((a != 0) && (a != 1) && (a != 7)) Line(x, y, 0.3, 0.5, 0.7, 0.5, size);
+    if ((a != 1) && (a != 4) && (a != 7)) Line(x, y, 0.3, 0.15, 0.7, 0.15, size);
+
+    if ((a != 5) && (a != 6)) Line(x, y, 0.7, 0.5, 0.7, 0.85, size);
+    if ((a != 2)) Line(x, y, 0.7, 0.5, 0.7, 0.15, size);
+
+    if ((a != 1) && (a != 2) && (a != 3) && (a != 7)) Line(x, y, 0.3, 0.5, 0.3, 0.85, size);
+    if ((a == 0) | (a == 2) || (a == 6) || (a == 8))   Line(x, y, 0.3, 0.5, 0.3, 0.15, size);
+    glEnd();
+}
+
+void renderScore() {
+    glColor3f(1.0f, 1.0f, 1.0f);
+
+    // Преобразуем текущий счет в строку
+    std::string st_score = std::to_string(score);
+    // Рисуем цифры счета
+    for (int i = 0; i < st_score.length(); i++) { // Используем length() вместо size()
+        ShowCount(15.0f * i, 23.0f, st_score[i] - '0', 20.0f); // Вычитаем '0' из символа, чтобы получить его числовое значение
+    }
+}
+
 // Render game objects
 void renderGame() {
     glClear(GL_COLOR_BUFFER_BIT);
@@ -584,9 +618,11 @@ void renderGame() {
         glEnd();
     }
 
+
     renderBlocks();
     renderBonuses();
     renderLives();
+    renderScore();
 
     glColor3f(1.0f, 1.0f, 1.0f); // Reset color to white for next frame
 }
@@ -629,8 +665,6 @@ int main() {
         processInput(window, deltaTime);
         updateGame(deltaTime);
         renderGame();
-
-        drawSquare(0.0f, 0.0f, 20.0f);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
