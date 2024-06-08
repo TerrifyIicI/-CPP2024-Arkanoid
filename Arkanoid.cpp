@@ -12,7 +12,7 @@
 #include <cstdlib>
 #include <tuple>
 #include <functional>
-#include <math.h>
+
 
 // Window dimensions
 const GLint WIDTH = 800, HEIGHT = 600;
@@ -97,6 +97,7 @@ struct Bonus {
 // Game state
 int score;
 int lives;
+int stickyWait;
 bool stickyBall;
 bool oneTimeBottom = false;
 bool startFlag;
@@ -119,8 +120,8 @@ bool checkCollision(Ball& ball, Paddle& paddle) {
 
 bool checkCollision(Ball& ball, Block& block) {
     return !block.destroyed &&
-        ball.x + ball.radius >= block.x && ball.x - ball.radius <= block.x + block.width &&
-        ball.y + ball.radius >= block.y && ball.y - ball.radius <= block.y + block.height;
+        ball.x + ball.radius > block.x && ball.x - ball.radius < block.x + block.width &&
+        ball.y + ball.radius > block.y && ball.y - ball.radius < block.y + block.height;
 }
 
 bool checkCollision(Paddle& paddle, Bonus& bonus) {
@@ -156,6 +157,7 @@ void applyBonus(BonusType type) {
         lives++;
         break;
     case BONUS_EXTRA_BALL: {
+        stickyWait = 0;
         stickyBall = false;
         Ball newBall = { paddle.x + paddle.width / 2, paddle.y - 10.0f, 10.0f, 200.0f, -200.0f };
         balls.push_back(newBall);
@@ -245,8 +247,9 @@ void processInput(GLFWwindow* window, float deltaTime) {
     deltaX -= paddle.x;
     if (stickyBall) {
         for (auto& ball : balls) {
-            if (startFlag) {
-                ball.x -= deltaX;
+            if (startFlag || stickyWait > 0) {
+                if (ball.y - ball.radius <= paddle.y + paddle.height)
+                    ball.x -= deltaX;
             }
         }
     }
@@ -292,18 +295,34 @@ void destroy(Block& block) {
     }
 }
 
+void updateBall(Ball& ball, float deltaTime) {
+    ball.x += ball.velocityX * deltaTime;
+    ball.y += ball.velocityY * deltaTime;
+}
+
 void updateGame(float deltaTime) {
     for (auto& ball : balls) {
         // Обновление позиции шарика
-        ball.x += ball.velocityX * deltaTime;
-        ball.y += ball.velocityY * deltaTime;
+        if (checkCollision(ball, paddle) && stickyBall && ball.velocityX != 0 && ball.velocityY != 0) {
+            stickyWait++;
+            if (stickyWait > 8) {
+                stickyBall = false;
+                stickyWait = 0;
+            }
+            return;
+        }
+        else {
+            updateBall(ball, deltaTime);
+        }
 
         // Обработка столкновений со стенами
-        if (ball.x <= 0.0f || ball.x + ball.radius >= WIDTH) {
+        if (ball.x < 0.0f || ball.x + ball.radius > WIDTH) {
             ball.velocityX = -ball.velocityX;
+            updateBall(ball, deltaTime);
         }
-        if (ball.y <= 0.0f) {
+        else if (ball.y < 0.0f) {
             ball.velocityY = -ball.velocityY;
+            updateBall(ball, deltaTime);
         }
 
         // Обработка столкновения с платформой
@@ -319,16 +338,17 @@ void updateGame(float deltaTime) {
                 double yDist = std::abs(ball.y - (block.y + block.height / 2)) - block.height / 2;
 
                 if (xDist < ball.radius && yDist < ball.radius) {
-                    if (xDist < yDist) {
+                    if (xDist == yDist) {
+                        ball.velocityX = -ball.velocityX;
+                        ball.velocityY = -ball.velocityY;
+                    }
+                    else if (xDist < yDist) {
                         ball.velocityY = -ball.velocityY;
                     }
                     else if (xDist > yDist) {
                         ball.velocityX = -ball.velocityX;
                     }
-                    else {
-                        ball.velocityX = -ball.velocityX;
-                        ball.velocityY = -ball.velocityY;
-                    }
+                    updateBall(ball, deltaTime);
                     destroy(block);
                 }
             }
@@ -365,6 +385,7 @@ void updateGame(float deltaTime) {
             std::cout << "Game Over! Your score: " << score << std::endl;
             initGame();
         }
+
     }
 
     // Обновление бонусов
