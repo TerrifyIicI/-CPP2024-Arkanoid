@@ -12,7 +12,6 @@
 #include <tuple>
 #include <functional>
 #include <math.h>
-
 // Window dimensions
 const GLint WIDTH = 800, HEIGHT = 600;
 
@@ -28,25 +27,53 @@ struct Ball {
     float x, y;
     float radius;
     float velocityX, velocityY;
+
+    bool operator==(const Ball& other) const {
+        return x == other.x && y == other.y;
+    }
 } ball;
 
 // Типы блоков в игре Арканоид
 enum BlockType {
-    INDESTRUCTIBLE,  // 1) Неразрушаемые блоки
-    BONUS_SIZE_UP,    // 5) Бонус, увеличивающий размер каретки
-    BONUS_SIZE_DOWN,  // 5) Бонус, уменьшающий размер каретки
-    BONUS_SPEED_UP,   // 5) Бонус, увеличивающий скорость шарика
-    BONUS_SPEED_DOWN, // 5) Бонус, уменьшающий скорость шарика
-    BONUS_STICKY,     // 5) Бонус, увеличивающий прилипание шарика к каретке
-    BONUS_EXTRA_LIFE,// дающий дополнительную жизнь
-    BONUS_EXTRA_BALL,// 5, 9) Бонус, создающий второй шарик
-    BONUS_ONE_TIME_BOTTOM, // 6) Бонус, создающий одноразовое дно для шарика
-    SPEED_UP,        // 3) Блоки, увеличивающие скорость шарика при столкновении
-    DESTRUCTIBLE     // 4) Разрушаемые блоки с уровнем здоровья
+    DESTRUCTIBLE,
+    SPEED_UP,
+    INDESTRUCTIBLE,
 };
 
+enum BonusType {
+    BONUS_SIZE_UP,
+    BONUS_SIZE_DOWN,
+    BONUS_SPEED_UP,
+    BONUS_SPEED_DOWN,
+    BONUS_STICKY,
+    BONUS_EXTRA_LIFE,
+    BONUS_EXTRA_BALL,
+    BONUS_ONE_TIME_BOTTOM
+};
 
-// Block
+std::map<BlockType, std::tuple<float, float, float>> blockColorMap = {
+    {INDESTRUCTIBLE, {0.8f, 0.8f, 0.8f}}, // FFFFFF Неразрушаемые
+    {DESTRUCTIBLE, {1.0f, 0.843f, 0.0f}}, // C492B1 Блоки имеют уровень здоровья
+    {SPEED_UP, {0.886f, 0.286f, 0.427f}}  // E34A6F скорость
+};
+
+std::map<BonusType, std::tuple<float, float, float>> bonusColorMap = {
+    {BONUS_SIZE_UP, {0.329f, 1.0f, 0.267f}}, // 53FF45 зеленый
+    {BONUS_SIZE_DOWN, {0.329f, 1.0f, 0.267f}}, // 53FF45
+    {BONUS_STICKY, {0.329f, 1.0f, 0.267f}}, // 53FF45
+    {BONUS_EXTRA_LIFE, {0.329f, 1.0f, 0.267f}}, // 53FF45
+    {BONUS_EXTRA_BALL, {0.0f, 0.663f, 0.910f}}, // 00A9E8
+    {BONUS_SPEED_UP, {0.886f, 0.286f, 0.427f}}, // E34A6F скорость
+    {BONUS_SPEED_DOWN, {0.886f, 0.286f, 0.427f}}, // E34A6F скорость
+    {BONUS_ONE_TIME_BOTTOM, {1.0f, 0.843f, 0.0f}}  // C492B1
+};
+
+std::map<BlockType, int> blockHealth = {
+    {INDESTRUCTIBLE, -1},
+    {DESTRUCTIBLE, 2},
+    {SPEED_UP, 1}
+};
+
 struct Block {
     float x, y;
     float width, height;
@@ -55,13 +82,77 @@ struct Block {
     bool destroyed;
 };
 
+struct Bonus {
+    float x, y;
+    float width, height;
+    BonusType type;
+    bool active;
+};
+
 // Game state
 int score = 0;
 int lives = 3;
-bool stickyBall = false;
+bool stickyBall = true;
 bool oneTimeBottom = false;
 std::vector<Block> blocks;
 std::vector<Ball> balls;
+std::vector<Bonus> bonuses;
+
+bool checkCollision(Ball& ball, Paddle& paddle) {
+    return ball.x + ball.radius >= paddle.x && ball.x - ball.radius <= paddle.x + paddle.width &&
+        ball.y + ball.radius >= paddle.y && ball.y - ball.radius <= paddle.y + paddle.height;
+}
+
+bool checkCollision(Ball& ball, Block& block) {
+    return !block.destroyed &&
+        ball.x + ball.radius > block.x && ball.x - ball.radius < block.x + block.width &&
+        ball.y + ball.radius > block.y && ball.y - ball.radius < block.y + block.height;
+}
+
+bool checkCollision(Paddle& paddle, Bonus& bonus) {
+    return bonus.active &&
+        paddle.x < bonus.x + bonus.width && paddle.x + paddle.width > bonus.x &&
+        paddle.y < bonus.y + bonus.height && paddle.y + paddle.height > bonus.y;
+}
+
+void applyBonus(BonusType type) {
+    switch (type) {
+    case BONUS_SIZE_UP:
+        paddle.width *= 1.2f;
+        break;
+    case BONUS_SIZE_DOWN:
+        paddle.width *= 0.8f;
+        break;
+    case BONUS_SPEED_UP:
+        for (auto& ball : balls) {
+            ball.velocityX *= 1.2f;
+            ball.velocityY *= 1.2f;
+        }
+        break;
+    case BONUS_SPEED_DOWN:
+        for (auto& ball : balls) {
+            ball.velocityX *= 0.8f;
+            ball.velocityY *= 0.8f;
+        }
+        break;
+    case BONUS_STICKY:
+        stickyBall = true;
+        break;
+    case BONUS_EXTRA_LIFE:
+        lives++;
+        break;
+    case BONUS_EXTRA_BALL: {
+        Ball newBall = { paddle.x + paddle.width / 2, paddle.y - 10.0f, 10.0f, 200.0f, -200.0f };
+        balls.push_back(newBall);
+        break;
+    }
+    case BONUS_ONE_TIME_BOTTOM:
+        oneTimeBottom = true;
+        break;
+    default:
+        break;
+    }
+}
 
 void initGame() {
     // Инициализация весла
@@ -73,26 +164,12 @@ void initGame() {
 
     // Инициализация мячей
     balls.clear();
-    Ball initialBall = { WIDTH / 2.0f, HEIGHT / 2.0f, 10.0f, 200.0f, -200.0f };
+    Ball initialBall = { paddle.x + paddle.width / 2, paddle.y - 10.0f, 10.0f, 0.0f, 0.0f };
     balls.push_back(initialBall);
 
     // Инициализация блоков
     blocks.clear();
-
-    // Создание map для связи типа блока с его здоровьем
-    std::map<BlockType, int> blockHealth = {
-        {INDESTRUCTIBLE, -1},
-        {BONUS_SIZE_UP, 1},
-        {BONUS_SIZE_DOWN, 1},
-        {BONUS_SPEED_UP, 1},
-        {BONUS_SPEED_DOWN, 1},
-        {BONUS_STICKY, 1},
-        {BONUS_EXTRA_LIFE, 1},
-        {BONUS_EXTRA_BALL, 1},
-        {BONUS_ONE_TIME_BOTTOM, 1},
-        {SPEED_UP, 1},
-        {DESTRUCTIBLE, 2}
-    };
+    bonuses.clear();
 
     int numRows = 4 + std::rand() % 5; // Генерация случайного числа от 4 до 8
 
@@ -111,7 +188,7 @@ void initGame() {
             block.destroyed = false;
 
             // Генерация случайного типа блока и присвоение здоровья
-            int randomTypeIndex = std::rand() % blockHealth.size();
+            int randomTypeIndex = std::rand() % 2;
             auto it = blockHealth.begin();
             std::advance(it, randomTypeIndex);
             block.type = it->first;
@@ -121,8 +198,9 @@ void initGame() {
         }
     }
 }
-// Input handling
+
 void processInput(GLFWwindow* window, float deltaTime) {
+    float deltaX = paddle.x;
     if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
         paddle.x -= paddle.speed * deltaTime;
     if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
@@ -136,58 +214,25 @@ void processInput(GLFWwindow* window, float deltaTime) {
     // Ensure the paddle stays within bounds
     if (paddle.x < 0.0f) paddle.x = 0.0f;
     if (paddle.x + paddle.width > WIDTH) paddle.x = WIDTH - paddle.width;
-}
-
-// Collision detection with paddle
-bool checkCollision(Ball& ball, Paddle& paddle) {
-    return ball.x + ball.radius > paddle.x && ball.x - ball.radius < paddle.x + paddle.width &&
-        ball.y + ball.radius > paddle.y && ball.y - ball.radius < paddle.y + paddle.height;
-}
-
-//Cтолкновений с блоками
-bool checkCollision(Ball& ball, Block& block) {
-    return !block.destroyed &&
-        ball.x + ball.radius > block.x && ball.x - ball.radius < block.x + block.width &&
-        ball.y + ball.radius > block.y && ball.y - ball.radius < block.y + block.height;
-}
-
-
-
-
-// Apply bonus effect
-void applyBonus(BlockType type) {
-    switch (type) {
-    case BONUS_SIZE_UP:
-        paddle.width *= 1.2f;  // Меньше увеличение размера
-        break;
-    case BONUS_SIZE_DOWN:
-        paddle.width *= 0.8f;
-        break;
-    case BONUS_SPEED_UP:
-        ball.velocityX *= 1.2f;
-        ball.velocityY *= 1.2f;
-        break;
-    case BONUS_SPEED_DOWN:
-        ball.velocityX *= 0.8f;
-        ball.velocityY *= 0.8f;
-        break;
-    case BONUS_STICKY:
-        stickyBall = true;
-        break;
-    case BONUS_EXTRA_LIFE:
-        lives++;
-        break;
-    case BONUS_EXTRA_BALL: {
-        Ball newBall = ball;
-        newBall.velocityX = -newBall.velocityX;
-        balls.push_back(newBall);
-        break;
+    deltaX -= paddle.x;
+    if (stickyBall) {
+        for (auto& ball : balls) {
+            if (checkCollision(ball, paddle)) {
+                ball.x -= deltaX;
+            }
+        }
     }
-    case BONUS_ONE_TIME_BOTTOM:
-        oneTimeBottom = true;
-        break;
-    default:
-        break;
+
+    // Launch the ball
+    if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
+        for (auto& ball : balls) {
+            if (ball.velocityX == 0.0f && ball.velocityY == 0.0f) {
+                ball.velocityX = 200.0f;
+                ball.velocityY = -200.0f;
+            }
+            stickyBall = false;
+        }
+
     }
 }
 
@@ -198,12 +243,28 @@ void destroy(Block& block) {
         if (block.health <= 0) {
             block.destroyed = true;
             score += 1;
-            applyBonus(block.type);
         }
+        if (block.type == SPEED_UP) {
+            for (auto& ball : balls) {
+                if (stickyBall && ball.y >= paddle.y - ball.radius) {
+                    ball.velocityX *= 4.2f;
+                    ball.velocityY *= 4.2f;
+                }
+            }
+            return;
+        }
+        // Создание бонуса
+        Bonus bonus;
+        bonus.x = block.x + block.width / 2 - 10.0f;
+        bonus.y = block.y + block.height / 2 - 10.0f;
+        bonus.width = 20.0f;
+        bonus.height = 20.0f;
+        bonus.active = true;
+        bonus.type = static_cast<BonusType>(std::rand() % 8);
+        bonuses.push_back(bonus);
     }
 }
 
-// Update game state
 void updateGame(float deltaTime) {
     for (auto& ball : balls) {
         // Обновление позиции шарика
@@ -232,17 +293,13 @@ void updateGame(float deltaTime) {
 
                 if (xDist < ball.radius && yDist < ball.radius) {
                     if (xDist < yDist) {
-                        // Отражение шарика вверх при столкновении с блоком
                         ball.velocityY = -ball.velocityY;
                     }
                     else if (xDist > yDist) {
-                        // Отражение шарика вверх при столкновении с блоком
                         ball.velocityX = -ball.velocityX;
                     }
                     destroy(block);
                 }
-
-
             }
         }
 
@@ -251,6 +308,12 @@ void updateGame(float deltaTime) {
                 oneTimeBottom = false;
                 ball.velocityY = -ball.velocityY;
             }
+            else if (balls.size() > 1) {
+                auto it = std::find(balls.begin(), balls.end(), ball);
+                if (it != balls.end()) {
+                    balls.erase(it);
+                }
+            }
             else {
                 lives--;
                 if (lives <= 0) {
@@ -258,27 +321,39 @@ void updateGame(float deltaTime) {
                     initGame();
                 }
                 else {
-                    ball.x = WIDTH / 2.0f;
-                    ball.y = HEIGHT / 2.0f;
-                    ball.velocityX = 200.0f;
-                    ball.velocityY = -200.0f;
+                    ball.x = paddle.x + paddle.width / 2;
+                    ball.y = paddle.y - 10.0f;
+                    ball.velocityX = 0.0f;
+                    ball.velocityY = 0.0f;
                 }
+            }
+        }
+    }
+
+    // Обновление бонусов
+    for (auto& bonus : bonuses) {
+        if (bonus.active) {
+            bonus.y += 100.0f * deltaTime;
+
+            if (checkCollision(paddle, bonus)) {
+                applyBonus(bonus.type);
+                bonus.active = false;
+            }
+
+            if (bonus.y > HEIGHT) {
+                bonus.active = false;
             }
         }
     }
 }
 
-
 void renderBlocks() {
     for (const auto& block : blocks) {
         if (!block.destroyed) {
-            if (block.type == INDESTRUCTIBLE) glColor3f(0.8f, 0.8f, 0.8f); // Grey
-            else if (block.type == BONUS_SIZE_UP || block.type == BONUS_EXTRA_LIFE) glColor3f(0.0f, 1.0f, 0.0f); // Green
-            else if (block.type == BONUS_SIZE_DOWN || block.type == BONUS_SPEED_DOWN) glColor3f(1.0f, 0.5f, 0.0f); // Orange
-            else if (block.type == BONUS_SPEED_UP) glColor3f(1.0f, 0.0f, 0.0f); // Red
-            else if (block.type == BONUS_STICKY) glColor3f(0.0f, 0.0f, 1.0f); // Blue
-            else if (block.type == BONUS_EXTRA_BALL || block.type == BONUS_ONE_TIME_BOTTOM) glColor3f(1.0f, 1.0f, 0.0f); // Yellow
-            else glColor3f(1.0f, 1.0f, 0.0f); // Yellow
+            auto it = blockColorMap.find(block.type);
+            if (it != blockColorMap.end()) {
+                glColor3f(std::get<0>(it->second), std::get<1>(it->second), std::get<2>(it->second));
+            }
 
             glBegin(GL_QUADS);
             glVertex2f(block.x, block.y);
@@ -287,9 +362,8 @@ void renderBlocks() {
             glVertex2f(block.x, block.y + block.height);
             glEnd();
 
-            // Draw cracks proportional to health
             if (block.health > 0) {
-                glColor3f(0.0f, 0.0f, 0.0f); // Black for cracks
+                glColor3f(0.0f, 0.0f, 0.0f);
                 glBegin(GL_LINES);
                 for (int i = 0; i < block.health; i++) {
                     glVertex2f(block.x + (i * (block.width / (block.health + 1))), block.y);
@@ -300,6 +374,25 @@ void renderBlocks() {
         }
     }
 }
+
+void renderBonuses() {
+    for (const auto& bonus : bonuses) {
+        if (bonus.active) {
+            auto it = bonusColorMap.find(bonus.type);
+            if (it != bonusColorMap.end()) {
+                glColor3f(std::get<0>(it->second), std::get<1>(it->second), std::get<2>(it->second));
+            }
+
+            glBegin(GL_QUADS);
+            glVertex2f(bonus.x, bonus.y);
+            glVertex2f(bonus.x + bonus.width, bonus.y);
+            glVertex2f(bonus.x + bonus.width, bonus.y + bonus.height);
+            glVertex2f(bonus.x, bonus.y + bonus.height);
+            glEnd();
+        }
+    }
+}
+
 // Render game objects
 void renderGame() {
     glClear(GL_COLOR_BUFFER_BIT);
@@ -323,6 +416,7 @@ void renderGame() {
     }
 
     renderBlocks();
+    renderBonuses();
 
     // Render score and lives will be leter
 
