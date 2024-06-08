@@ -3,6 +3,34 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
+# Исключаем объектные файлы и файлы библиотек
+*.obj
+*.exp
+*.pdb
+
+# Исключаем выходные файлы и папки
+/bin
+/obj
+/Debug
+/Release
+/x64
+/x86
+
+# Исключаем пользовательские файлы настроек Visual Studio
+*.user
+*.suo
+*.vspscc
+
+# Исключаем файлы автоматического дополнения IntelliSense
+*.ncb
+
+# Исключаем временные файлы
+*.tmp
+
+# Исключаем файл .vcxproj.user, содержащий пользовательские настройки проекта
+*.vcxproj.user
+
+
 # User-specific files
 *.rsuser
 *.suo
