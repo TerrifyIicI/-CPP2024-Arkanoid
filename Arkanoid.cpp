@@ -12,6 +12,7 @@
 #include <tuple>
 #include <functional>
 #include <math.h>
+
 // Window dimensions
 const GLint WIDTH = 800, HEIGHT = 600;
 
@@ -92,8 +93,9 @@ struct Bonus {
 // Game state
 int score = 0;
 int lives = 3;
-bool stickyBall = true;
+bool stickyBall;
 bool oneTimeBottom = false;
+bool startFlag;
 std::vector<Block> blocks;
 std::vector<Ball> balls;
 std::vector<Bonus> bonuses;
@@ -105,8 +107,8 @@ bool checkCollision(Ball& ball, Paddle& paddle) {
 
 bool checkCollision(Ball& ball, Block& block) {
     return !block.destroyed &&
-        ball.x + ball.radius > block.x && ball.x - ball.radius < block.x + block.width &&
-        ball.y + ball.radius > block.y && ball.y - ball.radius < block.y + block.height;
+        ball.x + ball.radius >= block.x && ball.x - ball.radius <= block.x + block.width &&
+        ball.y + ball.radius >= block.y && ball.y - ball.radius <= block.y + block.height;
 }
 
 bool checkCollision(Paddle& paddle, Bonus& bonus) {
@@ -142,6 +144,7 @@ void applyBonus(BonusType type) {
         lives++;
         break;
     case BONUS_EXTRA_BALL: {
+        stickyBall = false;
         Ball newBall = { paddle.x + paddle.width / 2, paddle.y - 10.0f, 10.0f, 200.0f, -200.0f };
         balls.push_back(newBall);
         break;
@@ -155,6 +158,9 @@ void applyBonus(BonusType type) {
 }
 
 void initGame() {
+
+    startFlag = true;
+    stickyBall = true;
     // Инициализация весла
     paddle.x = WIDTH / 2.0f - 50.0f;
     paddle.y = HEIGHT - 30.0f;
@@ -214,23 +220,25 @@ void processInput(GLFWwindow* window, float deltaTime) {
     // Ensure the paddle stays within bounds
     if (paddle.x < 0.0f) paddle.x = 0.0f;
     if (paddle.x + paddle.width > WIDTH) paddle.x = WIDTH - paddle.width;
+
     deltaX -= paddle.x;
     if (stickyBall) {
         for (auto& ball : balls) {
-            if (checkCollision(ball, paddle)) {
+            if (startFlag) {
                 ball.x -= deltaX;
             }
         }
     }
 
     // Launch the ball
-    if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
+    if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS && stickyBall) {
         for (auto& ball : balls) {
             if (ball.velocityX == 0.0f && ball.velocityY == 0.0f) {
                 ball.velocityX = 200.0f;
                 ball.velocityY = -200.0f;
             }
             stickyBall = false;
+            startFlag = false;
         }
 
     }
@@ -246,10 +254,8 @@ void destroy(Block& block) {
         }
         if (block.type == SPEED_UP) {
             for (auto& ball : balls) {
-                if (stickyBall && ball.y >= paddle.y - ball.radius) {
-                    ball.velocityX *= 4.2f;
-                    ball.velocityY *= 4.2f;
-                }
+                ball.velocityX *= 1.2f;
+                ball.velocityY *= 1.2f;
             }
             return;
         }
@@ -321,6 +327,8 @@ void updateGame(float deltaTime) {
                     initGame();
                 }
                 else {
+                    startFlag = true;
+                    stickyBall = true;
                     ball.x = paddle.x + paddle.width / 2;
                     ball.y = paddle.y - 10.0f;
                     ball.velocityX = 0.0f;
@@ -375,6 +383,115 @@ void renderBlocks() {
     }
 }
 
+// Объявляем функции для рисования объектов
+void drawPlus(float x, float y, float size);
+void drawMinus(float x, float y, float size);
+void drawHeart(float x, float y, float size);
+void drawCircle(float x, float y, float radius);
+void drawSquare(float x, float y, float size);
+
+// Создаем карту, которая сопоставляет типы бонусов с функциями рисования
+std::map<BonusType, std::function<void(float, float, float)>> bonusDrawFuncMap = {
+    {BONUS_SIZE_UP, drawPlus},
+    {BONUS_SIZE_DOWN, drawMinus},
+    {BONUS_SPEED_UP, drawPlus},
+    {BONUS_SPEED_DOWN, drawMinus},
+    {BONUS_STICKY, drawSquare},
+    {BONUS_EXTRA_LIFE, drawHeart},
+    {BONUS_EXTRA_BALL, drawCircle},
+    {BONUS_ONE_TIME_BOTTOM, drawHeart}
+};
+
+void drawPlus(float x, float y, float size) {
+    glLineWidth(10);
+    const float halfSize = size / 2;
+    glBegin(GL_LINES);
+    glVertex2f(x - halfSize, y);
+    glVertex2f(x + halfSize, y);
+    glVertex2f(x, y - halfSize);
+    glVertex2f(x, y + halfSize);
+    glEnd();
+}
+
+void drawMinus(float x, float y, float size) {
+    glLineWidth(10);
+    const float halfSize = size / 2;
+    glBegin(GL_LINES);
+    glVertex2f(x - halfSize, y);
+    glVertex2f(x + halfSize, y);
+    glEnd();
+}
+
+void drawHeart(float x, float y, float size) {
+    glLineWidth(3);
+    const float halfSize = size / 2.0f;
+    const float leftX = x - halfSize;
+    const float rightX = x + halfSize;
+    const float topY = y + halfSize;
+
+    // Рисуем левую половину круга
+    glBegin(GL_POLYGON);
+    const float leftCircleX = x - halfSize / 2.0f;
+    const float leftCircleY = y;
+    const float leftCircleRadius = halfSize / 2.0f;
+    const int numSegments = 20;
+    for (int i = 0; i <= numSegments; ++i) {
+        const float angle = M_PI * i / numSegments;
+        const float circleX = leftCircleX + leftCircleRadius * std::cos(angle);
+        const float circleY = leftCircleY - leftCircleRadius * std::sin(angle);
+        if (circleY <= y) {
+            glVertex2f(circleX, circleY);
+        }
+    }
+    glEnd();
+
+    // Рисуем правую половину круга
+    glBegin(GL_POLYGON);
+    const float rightCircleX = x + halfSize / 2.0f;
+    const float rightCircleY = y;
+    const float rightCircleRadius = halfSize / 2.0f;
+    for (int i = 0; i <= numSegments; ++i) {
+        const float angle = M_PI * i / numSegments;
+        const float circleX = rightCircleX - rightCircleRadius * std::cos(angle);
+        const float circleY = rightCircleY - rightCircleRadius * std::sin(angle);
+        if (circleY <= y) {
+            glVertex2f(circleX, circleY);
+        }
+    }
+    glEnd();
+
+    // Рисуем основание треугольника
+    glBegin(GL_TRIANGLES);
+    glVertex2f(leftX, y);
+    glVertex2f(rightX, y);
+    glVertex2f(x, topY);
+    glEnd();
+}
+
+void drawCircle(float x, float y, float size) {
+    glLineWidth(3);
+    glBegin(GL_POLYGON);
+    const int numSegments = 30;
+    for (int i = 0; i <= numSegments; ++i) {
+        const float angle = 2.0f * M_PI * i / numSegments;
+        const float x1 = x + size / 2 * std::cos(angle);
+        const float y1 = y + size / 2 * std::sin(angle);
+        glVertex2f(x1, y1);
+    }
+    glEnd();
+}
+
+void drawSquare(float x, float y, float size) {
+    glLineWidth(3);
+    const float halfSize = size / 2;
+    glBegin(GL_QUADS);
+    glVertex2f(x - halfSize, y - halfSize);
+    glVertex2f(x + halfSize, y - halfSize);
+    glVertex2f(x + halfSize, y + halfSize);
+    glVertex2f(x - halfSize, y + halfSize);
+    glEnd();
+}
+
 void renderBonuses() {
     for (const auto& bonus : bonuses) {
         if (bonus.active) {
@@ -383,16 +500,18 @@ void renderBonuses() {
                 glColor3f(std::get<0>(it->second), std::get<1>(it->second), std::get<2>(it->second));
             }
 
-            glBegin(GL_QUADS);
-            glVertex2f(bonus.x, bonus.y);
-            glVertex2f(bonus.x + bonus.width, bonus.y);
-            glVertex2f(bonus.x + bonus.width, bonus.y + bonus.height);
-            glVertex2f(bonus.x, bonus.y + bonus.height);
-            glEnd();
+            auto drawFunc = bonusDrawFuncMap[bonus.type];
+            drawFunc(bonus.x, bonus.y, std::max(bonus.width, bonus.height));
         }
     }
 }
 
+void renderLives() {
+    glColor3f(1.0f, 1.0f, 1.0f);
+    for (int i = 0; i < lives; i++) {
+        drawHeart(WIDTH - 25.0f * i - 15.0f, 10.0f, 20.0f);
+    }
+}
 // Render game objects
 void renderGame() {
     glClear(GL_COLOR_BUFFER_BIT);
@@ -417,8 +536,7 @@ void renderGame() {
 
     renderBlocks();
     renderBonuses();
-
-    // Render score and lives will be leter
+    renderLives();
 
     glColor3f(1.0f, 1.0f, 1.0f); // Reset color to white for next frame
 }
