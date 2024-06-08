@@ -30,7 +30,6 @@
 # Исключаем файл .vcxproj.user, содержащий пользовательские настройки проекта
 *.vcxproj.user
 
-
 # User-specific files
 *.rsuser
 *.suo
@@ -387,5 +386,13 @@ MigrationBackup/
 # Ionide (cross platform F# VS Code tools) working folder
 .ionide/
 
-# Fody - auto-generated XML schema
-FodyWeavers.xsd
+# Исключаем все папки, кроме glew и glfw
+*/
+
+# Но разрешаем папки glew и glfw
+!/glew/
+!/glfw/
+
+# Разрешаем все файлы в папках glew и glfw
+!/glew/**
+!/glfw/**
