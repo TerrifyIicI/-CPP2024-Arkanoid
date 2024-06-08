@@ -13,7 +13,6 @@
 #include <tuple>
 #include <functional>
 
-
 // Window dimensions
 const GLint WIDTH = 800, HEIGHT = 600;
 
@@ -76,7 +75,6 @@ std::map<BlockType, std::vector<int>> blockHealth = {
     {SPEED_UP, {1}}
 };
 
-
 struct Block {
     float x, y;
     float width, height;
@@ -84,8 +82,6 @@ struct Block {
     int health;
     bool destroyed;
 };
-
-
 
 struct Bonus {
     float x, y;
@@ -171,59 +167,140 @@ void applyBonus(BonusType type) {
     }
 }
 
+void generateSymmetricField(int numRows);
+void generatePatternedField(int numRows);
+void generateStripedField(int numRows);
+
 void initGame() {
+    std::srand(std::time(nullptr));
 
     score = 0;
     lives = 3;
     startFlag = true;
     stickyBall = true;
-    // Инициализация весла
+
     paddle.x = WIDTH / 2.0f - 50.0f;
     paddle.y = HEIGHT - 30.0f;
     paddle.width = 100.0f;
     paddle.height = 20.0f;
     paddle.speed = 500.0f;
 
-    // Инициализация мячей
     balls.clear();
     Ball initialBall = { paddle.x + paddle.width / 2, paddle.y - 10.0f, 10.0f, 0.0f, 0.0f };
     balls.push_back(initialBall);
 
-    // Инициализация блоков
     blocks.clear();
-    bonuses.clear();
 
-    int numRows = 4 + std::rand() % 5; // Генерация случайного числа от 4 до 8
+    int numRows = 4 + std::rand() % 7;
+    int generationType = std::rand() % 3;
+    switch (generationType) {
+    case 0:
+        generateSymmetricField(numRows);
+        break;
+    case 1:
+        generatePatternedField(numRows);
+        break;
+    case 2:
+        generateStripedField(numRows);
+        break;
+    }
+}
 
-    // Создание блоков
+void addBlock(int i, int j, int randomTypeIndex) {
+    Block block;
+    block.x = j * 80.0f;
+    block.y = i * 30.0f;
+    block.width = 78.0f;
+    block.height = 28.0f;
+    block.destroyed = false;
+    auto it = blockHealth.begin();
+    std::advance(it, randomTypeIndex);
+    block.type = it->first;
+    block.health = it->second[std::rand() % it->second.size()];
+    blocks.push_back(block);
+}
+
+void generateSymmetricField(int numRows) {
     for (int i = 0; i < numRows; ++i) {
-        for (int j = 0; j < 10; ++j) {
-            if (i >= 5 && std::rand() % 3 == 0) { // Генерация пропуска с вероятностью 1/3
-                continue;
-            }
-
-            Block block;
-            block.x = j * 80.0f;
-            block.y = i * 30.0f;
-            block.width = 78.0f;
-            block.height = 28.0f;
-            block.destroyed = false;
-            // Генерация случайного типа блока и присвоение здоровья
-            int randomTypeIndex;
+        for (int j = 0; j < 5; ++j) {
             if (std::rand() % 100 < 60) {
-                randomTypeIndex = 1; // DESTRUCTIBLE
+                addBlock(i, j, 1);
+                addBlock(i, 10 - j - 1, 1);
             }
             else if (std::rand() % 100 < 74) {
-                randomTypeIndex = 2; // SPEED_UP
+                addBlock(i, j, 2);
+                addBlock(i, 10 - j - 1, 2);
             }
             else {
-                randomTypeIndex = 0; // INDESTRUCTIBLE
+                addBlock(i, j, 0);
+                addBlock(i, 10 - j - 1, 0);
             }
-            auto it = blockHealth.begin();
-            std::advance(it, randomTypeIndex);
-            block.type = it->first;
-            block.health = it->second[std::rand() % it->second.size()]; // Получаем случайное значение здоровья из вектора
-            blocks.push_back(block);
+        }
+    }
+}
+
+
+void generatePatternedField(int numRows) {
+    std::vector<int> previousRow(10, 0); // 0 - пробиваемый блок, 1 - непробиваемый блок
+
+    std::srand(static_cast<unsigned>(std::time(nullptr))); // Инициализация генератора случайных чисел
+
+    for (int i = 0; i < numRows; ++i) {
+        std::vector<int> currentRow(10, 0); // Текущая строка
+
+        for (int j = 0; j < 10; ++j) {
+            // Проверяем условия для создания коридоров
+            if (previousRow[j] == 0) {
+                if (j < 9 && previousRow[j + 1] == 0) {
+                    // Есть проход и на текущей и на следующей позиции
+                    currentRow[j] = (std::rand() % 2 == 0) ? 0 : 1;
+                }
+                else if (j > 0 && previousRow[j - 1] == 0 && currentRow[j - 1] == 0) {
+                    // Есть проход на текущей и предыдущей позиции
+                    currentRow[j] = (std::rand() % 2 == 0) ? 0 : 1;
+                }
+                else {
+                    // Иначе, делаем текущую позицию пробиваемой
+                    currentRow[j] = 0;
+                }
+            }
+            else {
+                // Ставим случайный блок, если на предыдущем ряду здесь непробиваемый блок
+                currentRow[j] = (std::rand() % 2 == 0) ? 0 : 1;
+            }
+
+            // Добавляем блок в поле
+            if (currentRow[j] == 0) {
+                if (std::rand() % 100 < 60) {
+                    addBlock(i, j, 1);
+                }
+                else {
+                    addBlock(i, j, 2);
+                }
+            }
+            else {
+                addBlock(i, j, 0); // Непробиваемый блок
+            }
+        }
+
+        previousRow = currentRow; // Обновляем предыдущую строку
+    }
+}
+
+void generateStripedField(int numRows) {
+    for (int i = 0; i < numRows; ++i) {
+        for (int j = 0; j < 10; ++j) {
+            if (i % 2 == 0 && j % 2 == 0) {
+                addBlock(i, j, 0);
+            }
+            else {
+                if (std::rand() % 100 < 60) {
+                    addBlock(i, j, 1);
+                }
+                else {
+                    addBlock(i, j, 2);
+                }
+            }
         }
     }
 }
