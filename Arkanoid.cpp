@@ -13,12 +13,6 @@
 #include <functional>
 #include <math.h>
 
-#include <GL/glew.h>
-#include <GLFW/glfw3.h>
-#include <iostream>
-#include <vector>
-#include <math.h>
-
 // Window dimensions
 const GLint WIDTH = 800, HEIGHT = 600;
 
@@ -36,20 +30,21 @@ struct Ball {
     float velocityX, velocityY;
 } ball;
 
-// Block types
+// Типы блоков в игре Арканоид
 enum BlockType {
-    INDESTRUCTIBLE,
-    BONUS_SIZE_UP,
-    BONUS_SIZE_DOWN,
-    BONUS_SPEED_UP,
-    BONUS_SPEED_DOWN,
-    BONUS_STICKY,
-    BONUS_EXTRA_LIFE,
-    BONUS_EXTRA_BALL,
-    BONUS_ONE_TIME_BOTTOM,
-    SPEED_UP,
-    DESTRUCTIBLE
+    INDESTRUCTIBLE,  // 1) Неразрушаемые блоки
+    BONUS_SIZE_UP,    // 5) Бонус, увеличивающий размер каретки
+    BONUS_SIZE_DOWN,  // 5) Бонус, уменьшающий размер каретки
+    BONUS_SPEED_UP,   // 5) Бонус, увеличивающий скорость шарика
+    BONUS_SPEED_DOWN, // 5) Бонус, уменьшающий скорость шарика
+    BONUS_STICKY,     // 5) Бонус, увеличивающий прилипание шарика к каретке
+    BONUS_EXTRA_LIFE,// дающий дополнительную жизнь
+    BONUS_EXTRA_BALL,// 5, 9) Бонус, создающий второй шарик
+    BONUS_ONE_TIME_BOTTOM, // 6) Бонус, создающий одноразовое дно для шарика
+    SPEED_UP,        // 3) Блоки, увеличивающие скорость шарика при столкновении
+    DESTRUCTIBLE     // 4) Разрушаемые блоки с уровнем здоровья
 };
+
 
 // Block
 struct Block {
@@ -68,49 +63,64 @@ bool oneTimeBottom = false;
 std::vector<Block> blocks;
 std::vector<Ball> balls;
 
-// Initialize the game objects
 void initGame() {
+    // Инициализация весла
     paddle.x = WIDTH / 2.0f - 50.0f;
     paddle.y = HEIGHT - 30.0f;
     paddle.width = 100.0f;
     paddle.height = 20.0f;
     paddle.speed = 500.0f;
 
+    // Инициализация мячей
     balls.clear();
     Ball initialBall = { WIDTH / 2.0f, HEIGHT / 2.0f, 10.0f, 200.0f, -200.0f };
     balls.push_back(initialBall);
 
+    // Инициализация блоков
     blocks.clear();
-    // Initialize blocks with different types and properties
-    for (int i = 0; i < 5; ++i) {
+
+    // Создание map для связи типа блока с его здоровьем
+    std::map<BlockType, int> blockHealth = {
+        {INDESTRUCTIBLE, -1},
+        {BONUS_SIZE_UP, 1},
+        {BONUS_SIZE_DOWN, 1},
+        {BONUS_SPEED_UP, 1},
+        {BONUS_SPEED_DOWN, 1},
+        {BONUS_STICKY, 1},
+        {BONUS_EXTRA_LIFE, 1},
+        {BONUS_EXTRA_BALL, 1},
+        {BONUS_ONE_TIME_BOTTOM, 1},
+        {SPEED_UP, 1},
+        {DESTRUCTIBLE, 2}
+    };
+
+    int numRows = 4 + std::rand() % 5; // Генерация случайного числа от 4 до 8
+
+    // Создание блоков
+    for (int i = 0; i < numRows; ++i) {
         for (int j = 0; j < 10; ++j) {
+            if (i >= 5 && std::rand() % 3 == 0) { // Генерация пропуска с вероятностью 1/3
+                continue;
+            }
+
             Block block;
             block.x = j * 80.0f;
             block.y = i * 30.0f;
             block.width = 78.0f;
             block.height = 28.0f;
             block.destroyed = false;
-            if (i == 0) {
-                block.type = INDESTRUCTIBLE;
-                block.health = -1;
-            }
-            else if (i == 1) {
-                block.type = BONUS_SIZE_UP;
-                block.health = 1;
-            }
-            else if (i == 2) {
-                block.type = SPEED_UP;
-                block.health = 1;
-            }
-            else {
-                block.type = DESTRUCTIBLE;
-                block.health = 2;
-            }
+
+            // Генерация случайного типа блока и присвоение здоровья
+            int randomTypeIndex = std::rand() % blockHealth.size();
+            auto it = blockHealth.begin();
+            std::advance(it, randomTypeIndex);
+            block.type = it->first;
+            block.health = it->second;
+
             blocks.push_back(block);
         }
     }
 }
-
 // Input handling
 void processInput(GLFWwindow* window, float deltaTime) {
     if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
@@ -134,12 +144,14 @@ bool checkCollision(Ball& ball, Paddle& paddle) {
         ball.y + ball.radius > paddle.y && ball.y - ball.radius < paddle.y + paddle.height;
 }
 
-// Collision detection with blocks
+//Cтолкновений с блоками
 bool checkCollision(Ball& ball, Block& block) {
     return !block.destroyed &&
         ball.x + ball.radius > block.x && ball.x - ball.radius < block.x + block.width &&
         ball.y + ball.radius > block.y && ball.y - ball.radius < block.y + block.height;
 }
+
+
 
 
 // Apply bonus effect
@@ -179,33 +191,58 @@ void applyBonus(BlockType type) {
     }
 }
 
+void destroy(Block& block) {
+    // Уничтожение разрушаемого блока
+    if (block.type != INDESTRUCTIBLE) {
+        block.health--;
+        if (block.health <= 0) {
+            block.destroyed = true;
+            score += 1;
+            applyBonus(block.type);
+        }
+    }
+}
+
 // Update game state
 void updateGame(float deltaTime) {
     for (auto& ball : balls) {
+        // Обновление позиции шарика
         ball.x += ball.velocityX * deltaTime;
         ball.y += ball.velocityY * deltaTime;
 
-        if (ball.x <= 0.0f || ball.x + ball.radius >= WIDTH)
+        // Обработка столкновений со стенами
+        if (ball.x <= 0.0f || ball.x + ball.radius >= WIDTH) {
             ball.velocityX = -ball.velocityX;
-        if (ball.y <= 0.0f)
+        }
+        if (ball.y <= 0.0f) {
             ball.velocityY = -ball.velocityY;
+        }
 
+        // Обработка столкновения с платформой
         if (checkCollision(ball, paddle)) {
             ball.velocityY = -ball.velocityY;
             ball.y = paddle.y - ball.radius;
         }
 
+        // Обработка столкновений с блоками
         for (auto& block : blocks) {
             if (checkCollision(ball, block)) {
-                ball.velocityY = -ball.velocityY;
-                if (block.type != INDESTRUCTIBLE) {
-                    block.health--;
-                    if (block.health <= 0) {
-                        block.destroyed = true;
-                        score += 1;
-                        applyBonus(block.type);
+                double xDist = std::abs(ball.x - (block.x + block.width / 2)) - block.width / 2;
+                double yDist = std::abs(ball.y - (block.y + block.height / 2)) - block.height / 2;
+
+                if (xDist < ball.radius && yDist < ball.radius) {
+                    if (xDist < yDist) {
+                        // Отражение шарика вверх при столкновении с блоком
+                        ball.velocityY = -ball.velocityY;
                     }
+                    else if (xDist > yDist) {
+                        // Отражение шарика вверх при столкновении с блоком
+                        ball.velocityX = -ball.velocityX;
+                    }
+                    destroy(block);
                 }
+
+
             }
         }
 
@@ -231,29 +268,8 @@ void updateGame(float deltaTime) {
     }
 }
 
-// Render game objects
-void renderGame() {
-    glClear(GL_COLOR_BUFFER_BIT);
 
-    // Render paddle
-    glBegin(GL_QUADS);
-    glVertex2f(paddle.x, paddle.y);
-    glVertex2f(paddle.x + paddle.width, paddle.y);
-    glVertex2f(paddle.x + paddle.width, paddle.y + paddle.height);
-    glVertex2f(paddle.x, paddle.y + paddle.height);
-    glEnd();
-
-    // Render balls
-    for (const auto& ball : balls) {
-        glBegin(GL_TRIANGLE_FAN);
-        for (int i = 0; i < 360; i++) {
-            float theta = i * 3.14159f / 180;
-            glVertex2f(ball.x + ball.radius * cos(theta), ball.y + ball.radius * sin(theta));
-        }
-        glEnd();
-    }
-
-    // Render blocks
+void renderBlocks() {
     for (const auto& block : blocks) {
         if (!block.destroyed) {
             if (block.type == INDESTRUCTIBLE) glColor3f(0.8f, 0.8f, 0.8f); // Grey
@@ -283,6 +299,30 @@ void renderGame() {
             }
         }
     }
+}
+// Render game objects
+void renderGame() {
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // Render paddle
+    glBegin(GL_QUADS);
+    glVertex2f(paddle.x, paddle.y);
+    glVertex2f(paddle.x + paddle.width, paddle.y);
+    glVertex2f(paddle.x + paddle.width, paddle.y + paddle.height);
+    glVertex2f(paddle.x, paddle.y + paddle.height);
+    glEnd();
+
+    // Render balls
+    for (const auto& ball : balls) {
+        glBegin(GL_TRIANGLE_FAN);
+        for (int i = 0; i < 360; i++) {
+            float theta = i * 3.14159f / 180;
+            glVertex2f(ball.x + ball.radius * cos(theta), ball.y + ball.radius * sin(theta));
+        }
+        glEnd();
+    }
+
+    renderBlocks();
 
     // Render score and lives will be leter
 
