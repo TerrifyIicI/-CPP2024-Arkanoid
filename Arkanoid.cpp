@@ -3,6 +3,7 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <iostream>
+#include <string>
 #include <vector>
 #include <map>
 #include <ctime>
@@ -36,9 +37,9 @@ struct Ball {
 
 // Типы блоков в игре Арканоид
 enum BlockType {
+    INDESTRUCTIBLE,
     DESTRUCTIBLE,
     SPEED_UP,
-    INDESTRUCTIBLE,
 };
 
 enum BonusType {
@@ -69,11 +70,12 @@ std::map<BonusType, std::tuple<float, float, float>> bonusColorMap = {
     {BONUS_ONE_TIME_BOTTOM, {1.0f, 0.843f, 0.0f}}  // C492B1
 };
 
-std::map<BlockType, int> blockHealth = {
-    {INDESTRUCTIBLE, -1},
-    {DESTRUCTIBLE, 2},
-    {SPEED_UP, 1}
+std::map<BlockType, std::vector<int>> blockHealth = {
+    {INDESTRUCTIBLE, {-1}},
+    {DESTRUCTIBLE, {1, 2}}, // Здесь мы указываем возможные значения здоровья для разрушаемых блоков
+    {SPEED_UP, {1}}
 };
+
 
 struct Block {
     float x, y;
@@ -83,6 +85,8 @@ struct Block {
     bool destroyed;
 };
 
+
+
 struct Bonus {
     float x, y;
     float width, height;
@@ -91,14 +95,22 @@ struct Bonus {
 };
 
 // Game state
-int score = 0;
-int lives = 3;
+int score;
+int lives;
 bool stickyBall;
 bool oneTimeBottom = false;
 bool startFlag;
 std::vector<Block> blocks;
 std::vector<Ball> balls;
 std::vector<Bonus> bonuses;
+
+bool isBoardCleared() {
+    for (const auto& block : blocks) {
+        if (!block.destroyed && block.type != INDESTRUCTIBLE)
+            return false;
+    }
+    return true;
+};
 
 bool checkCollision(Ball& ball, Paddle& paddle) {
     return ball.x + ball.radius >= paddle.x && ball.x - ball.radius <= paddle.x + paddle.width &&
@@ -159,6 +171,8 @@ void applyBonus(BonusType type) {
 
 void initGame() {
 
+    score = 0;
+    lives = 3;
     startFlag = true;
     stickyBall = true;
     // Инициализация весла
@@ -192,14 +206,21 @@ void initGame() {
             block.width = 78.0f;
             block.height = 28.0f;
             block.destroyed = false;
-
             // Генерация случайного типа блока и присвоение здоровья
-            int randomTypeIndex = std::rand() % 2;
+            int randomTypeIndex;
+            if (std::rand() % 100 < 60) {
+                randomTypeIndex = 1; // DESTRUCTIBLE
+            }
+            else if (std::rand() % 100 < 74) {
+                randomTypeIndex = 2; // SPEED_UP
+            }
+            else {
+                randomTypeIndex = 0; // INDESTRUCTIBLE
+            }
             auto it = blockHealth.begin();
             std::advance(it, randomTypeIndex);
             block.type = it->first;
-            block.health = it->second;
-
+            block.health = it->second[std::rand() % it->second.size()]; // Получаем случайное значение здоровья из вектора
             blocks.push_back(block);
         }
     }
@@ -304,6 +325,10 @@ void updateGame(float deltaTime) {
                     else if (xDist > yDist) {
                         ball.velocityX = -ball.velocityX;
                     }
+                    else {
+                        ball.velocityX = -ball.velocityX;
+                        ball.velocityY = -ball.velocityY;
+                    }
                     destroy(block);
                 }
             }
@@ -335,6 +360,10 @@ void updateGame(float deltaTime) {
                     ball.velocityY = 0.0f;
                 }
             }
+        }
+        if (isBoardCleared()) {
+            std::cout << "Game Over! Your score: " << score << std::endl;
+            initGame();
         }
     }
 
@@ -579,6 +608,8 @@ int main() {
         processInput(window, deltaTime);
         updateGame(deltaTime);
         renderGame();
+
+        drawSquare(0.0f, 0.0f, 20.0f);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
