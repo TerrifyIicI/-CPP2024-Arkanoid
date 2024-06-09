@@ -153,11 +153,13 @@ void applyBonus(BonusType type) {
         lives++;
         break;
     case BONUS_EXTRA_BALL: {
-        stickyWait = 0;
-        stickyBall = false;
-        Ball newBall = { paddle.x + paddle.width / 2, paddle.y - 10.0f, 10.0f, 200.0f, -200.0f };
-        balls.push_back(newBall);
-        break;
+        if (!balls.empty()) {
+            stickyWait = 0;
+            stickyBall = false;
+            Ball newBall = { paddle.x + paddle.width / 2, paddle.y - 10.0f, 10.0f, 200.0f, -200.0f };
+            balls.push_back(newBall);
+            break;
+        }
     }
     case BONUS_ONE_TIME_BOTTOM:
         oneTimeBottom = true;
